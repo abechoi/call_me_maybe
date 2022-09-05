@@ -1,6 +1,7 @@
-use dotenv::dotenv;
+extern crate dirs;
 use openapi::apis::{configuration::Configuration, default_api as twilio_api};
-use std::env;
+use std::io::Read;
+use std::fs::File;
 
 #[allow(unused)]
 use clap::{Parser, Subcommand};
@@ -15,21 +16,41 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Adds files to myapp
     Call { from: String, to: String },
     Text { from: String, to: String },
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::io::Result<()> {
 
-    dotenv().expect("Error reading .env file");
-    let account_sid = env::var("TWILIO_ACCOUNT_SID").expect("Error reading Twilio Account SID");
-    let api_key_sid = env::var("TWILIO_API_KEY_SID").expect("Error reading Twilio API key");
-    let api_key_secret = env::var("TWILIO_API_KEY_SECRET").expect("Error reading Twilio API SID");
+    // 3 keys are required to run 
+    let mut account_sid = String::new();
+    let mut api_key_sid = String::new();
+    let mut api_key_secret = String::new();
 
+    // dirs::home_dir() gets the home directory for any OS
+    // error may occur on Windows.
+    let home = dirs::home_dir().unwrap().into_os_string().into_string().unwrap();
+    let path_to_key = format!("{}/ServiceTitan/Keys/keys.config", home);
+    let mut file = File::open(path_to_key)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    // loop through keys.config to get keys
+    for line in content.lines() {
+        if line.contains("twilioapikeys/prod/accountsid") {
+            account_sid = line.split("\"").nth(3).unwrap().to_string();
+        }else if line.contains("twilioapikeys/prod/apikeysid") {
+            api_key_sid = line.split("\"").nth(3).unwrap().to_string();
+        }else if line.contains("twilioapikeys/prod/apikeysecret") {
+            api_key_secret = line.split("\"").nth(3).unwrap().to_string();
+        }
+    }
+
+    // arg1 = subcommand, arg2 = from, arg3 = to
     let args = Cli::parse(); 
 
+    // authenticate
     let mut twilio_config = Configuration::default();
     twilio_config.basic_auth = Some((api_key_sid, Some(api_key_secret)));
 
@@ -43,6 +64,8 @@ async fn main() {
             test_sms(&twilio_config, &account_sid, &from, &to).await;
         },
     }
+
+    Ok(())
 }
 
 // cmm text <from> <to>
